@@ -1,0 +1,13 @@
+name: CrateCreator
+version: '${version}'
+
+main: fr.kilian.plugins.CrateCreator
+api-version: '1.21.11'
+load: POSTWORLD
+
+authors: [ TablePasDroite ]
+
+commands:
+  crate:
+    description: Main crate command
+    usage: /crate
