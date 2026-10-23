@@ -1,6 +1,9 @@
 package fr.kilian.plugins.model;
 
 import fr.kilian.plugins.CrateCreator;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Location;
 import org.bukkit.Particle;
 import org.bukkit.NamespacedKey;
@@ -9,6 +12,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.time.Instant;
@@ -23,12 +27,15 @@ public class Crate {
     private Instant expiresAt;
     private final CrateGUI gui;
     private Particle particle;
+    private double particleDistance;
+    private boolean constantParticle;
     private String openMessage;
     private boolean broadcastOpenMessage;
     private ItemStack key;
     private final String keyId;
     private final NamespacedKey crateKeyIdKey;
     private final NamespacedKey rewardWeightKey;
+    private final NamespacedKey commandRewardKey;
     private final ItemStack[] contents = new ItemStack[45];
     private final CrateContentGUI contentGUI;
     private final CrateRewardsGUI rewardsGUI;
@@ -48,10 +55,13 @@ public class Crate {
         this.persistenceId = Objects.requireNonNull(persistenceId, "persistenceId");
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt");
         this.particle = null;
+        this.particleDistance = 0.8;
+        this.constantParticle = false;
         this.openMessage = null;
         this.broadcastOpenMessage = false;
         this.key = null;
         this.rewardWeightKey = new NamespacedKey(CrateCreator.getInstance(), "reward_weight");
+        this.commandRewardKey = new NamespacedKey(CrateCreator.getInstance(), "command_reward");
         this.crateKeyIdKey = new NamespacedKey(CrateCreator.getInstance(), "crate_key_id");
         this.gui = new CrateGUI(CrateCreator.getInstance(), this, 54, name);
         this.contentGUI = new CrateContentGUI(CrateCreator.getInstance(), this, 54, name);
@@ -121,6 +131,29 @@ public class Crate {
 
     public Particle particle() {
         return particle;
+    }
+
+    public double particleDistance() {
+        return particleDistance;
+    }
+
+    public void setParticleDistance(double particleDistance) {
+        if(!Double.isFinite(particleDistance) || particleDistance < 0.0 || particleDistance > 5.0) {
+            throw new IllegalArgumentException("Particle distance must be between 0 and 5");
+        }
+        this.particleDistance = particleDistance;
+        gui.refresh();
+        persist();
+    }
+
+    public boolean constantParticle() {
+        return constantParticle;
+    }
+
+    public void setConstantParticle(boolean constantParticle) {
+        this.constantParticle = constantParticle;
+        gui.refresh();
+        persist();
     }
 
     public String openMessage() {
@@ -240,6 +273,30 @@ public class Crate {
             }
         }
         return false;
+    }
+
+    public boolean addCommandReward(String command) {
+        String normalizedCommand = Objects.requireNonNull(command, "command").trim();
+        if(normalizedCommand.startsWith("/")) normalizedCommand = normalizedCommand.substring(1).trim();
+        if(normalizedCommand.isBlank()) throw new IllegalArgumentException("Command cannot be blank");
+
+        ItemStack reward = new ItemStack(org.bukkit.Material.COMMAND_BLOCK);
+        ItemMeta meta = reward.getItemMeta();
+        var messages = CrateCreator.getInstance().messages();
+        meta.displayName(messages.text("gui.command-reward-name").decoration(TextDecoration.ITALIC, false));
+        meta.lore(List.of(messages.text("gui.command-reward-lore-prefix")
+                .append(Component.text(normalizedCommand, NamedTextColor.WHITE)
+                        .decoration(TextDecoration.ITALIC, false))
+                .decoration(TextDecoration.ITALIC, false)));
+        meta.getPersistentDataContainer().set(commandRewardKey, PersistentDataType.STRING, normalizedCommand);
+        reward.setItemMeta(meta);
+        return addReward(reward);
+    }
+
+    public String commandReward(ItemStack item) {
+        if(item == null || item.getType().isAir()) return null;
+        return item.getItemMeta().getPersistentDataContainer()
+                .get(commandRewardKey, PersistentDataType.STRING);
     }
 
     public boolean hasRewardSpace() {

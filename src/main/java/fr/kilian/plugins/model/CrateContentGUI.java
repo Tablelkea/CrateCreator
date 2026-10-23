@@ -72,7 +72,13 @@ public final class CrateContentGUI implements CrateInterface {
         if(item == null || item.getType().isAir()) return item;
         ItemStack displayed = item.clone();
         ItemMeta meta = displayed.getItemMeta();
-        List<Component> lore = new ArrayList<>(meta.lore() == null ? List.of() : meta.lore());
+        boolean commandReward = crate.commandReward(item) != null;
+        List<Component> lore = commandReward
+                ? new ArrayList<>(List.of(messages().text("gui.command-reward-public")
+                        .decoration(TextDecoration.ITALIC, false)))
+                : new ArrayList<>(meta.lore() == null ? List.of() : meta.lore());
+        if(commandReward) meta.displayName(messages().text("gui.command-reward-name")
+                .decoration(TextDecoration.ITALIC, false));
         lore.add(messages().text("gui.reward-chance", Map.of(
                 "value", String.format(Locale.US, "%.2f", crate.rewardChance(slot))
         )).decoration(TextDecoration.ITALIC, false));

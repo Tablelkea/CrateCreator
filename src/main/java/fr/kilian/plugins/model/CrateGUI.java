@@ -14,6 +14,7 @@ import fr.kilian.plugins.util.MessageService;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 
 public class CrateGUI implements CrateInterface {
@@ -28,6 +29,8 @@ public class CrateGUI implements CrateInterface {
     public static final int BROADCAST_SLOT = 31;
     public static final int DELETE_SLOT = 34;
     public static final int EXPIRATION_SLOT = 29;
+    public static final int CONSTANT_PARTICLE_SLOT = 30;
+    public static final int PARTICLE_DISTANCE_SLOT = 32;
 
     private final Crate crate;
     private final Inventory inventory;
@@ -153,6 +156,25 @@ public class CrateGUI implements CrateInterface {
                         messages().text("gui.expiration-change")
                 )
         ));
+        inventory.setItem(CONSTANT_PARTICLE_SLOT, createItem(
+                crate.constantParticle() ? Material.BLAZE_POWDER : Material.GRAY_DYE,
+                messages().text(crate.constantParticle()
+                        ? "gui.constant-particle-enabled" : "gui.constant-particle-disabled"),
+                List.of(
+                        messages().text("gui.constant-particle-value", java.util.Map.of(
+                                "value", particleName(crate.particle()))),
+                        messages().text("gui.constant-particle-description")
+                )
+        ));
+        inventory.setItem(PARTICLE_DISTANCE_SLOT, createItem(
+                Material.SPYGLASS,
+                messages().text("gui.particle-distance-title"),
+                List.of(
+                        messages().text("gui.particle-distance-value", java.util.Map.of(
+                                "value", String.format(Locale.US, "%.2f", crate.particleDistance()))),
+                        messages().text("gui.particle-distance-help")
+                )
+        ));
     }
 
     public void refresh() {
@@ -169,6 +191,11 @@ public class CrateGUI implements CrateInterface {
         lore.add(messages().text("gui.world", java.util.Map.of("value",
                 location.getWorld() == null ? messages().plain("gui.unknown-world") : location.getWorld().getName())));
         lore.add(messages().text("gui.particle", java.util.Map.of("value", particleName(crate.particle()))));
+        lore.add(messages().text("gui.particle-distance-value", java.util.Map.of(
+                "value", String.format(Locale.US, "%.2f", crate.particleDistance()))));
+        lore.add(messages().text("gui.constant-particle-state", java.util.Map.of(
+                "value", messages().plain(crate.constantParticle()
+                        ? "gui.constant-particle-on" : "gui.constant-particle-off"))));
         lore.add(messages().text("gui.message", java.util.Map.of("value",
                 crate.openMessage() == null || crate.openMessage().isBlank()
                         ? messages().plain("gui.no-value") : crate.openMessage())));

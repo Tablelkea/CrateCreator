@@ -16,6 +16,7 @@ public final class CrateCreator extends JavaPlugin {
     private CrateHistoryManager history;
     private CrateListener listener;
     private BukkitTask expirationTask;
+    private BukkitTask constantParticleTask;
 
     @Override
     public void onEnable() {
@@ -30,6 +31,8 @@ public final class CrateCreator extends JavaPlugin {
         this.listener = new CrateListener(this, manager);
         getServer().getPluginManager().registerEvents(listener, this);
         getServer().getScheduler().runTask(this, manager::refreshLoadedHolograms);
+        constantParticleTask = getServer().getScheduler().runTaskTimer(
+                this, manager::spawnConstantParticles, 1L, 10L);
         expirationTask = getServer().getScheduler().runTaskTimer(this, () ->
                 manager.getCrates().stream().filter(crate -> crate.isExpired()).toList()
                         .forEach(manager::deleteCrate), 20L, 20L);
@@ -38,6 +41,7 @@ public final class CrateCreator extends JavaPlugin {
     @Override
     public void onDisable() {
         if(expirationTask != null) expirationTask.cancel();
+        if(constantParticleTask != null) constantParticleTask.cancel();
         if(manager != null) manager.clearHolograms();
     }
 

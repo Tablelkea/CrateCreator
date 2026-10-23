@@ -215,6 +215,21 @@ public class CrateManager {
         }
     }
 
+    public void spawnConstantParticles() {
+        for(Crate crate : cratesById.values()) {
+            Particle particle = crate.particle();
+            if(!crate.constantParticle() || particle == null) continue;
+            Location location = crate.location();
+            World world = location.getWorld();
+            if(world == null || !world.isChunkLoaded(location.getBlockX() >> 4, location.getBlockZ() >> 4)) {
+                continue;
+            }
+            double distance = crate.particleDistance();
+            world.spawnParticle(particle, location.add(0.5, 1.0, 0.5), 4,
+                    distance, distance, distance, 0.0);
+        }
+    }
+
     public boolean hasHologram(Crate crate) {
         List<TextDisplay> displays = holograms.get(crate);
         return displays != null && displays.size() == 3
@@ -359,6 +374,12 @@ public class CrateManager {
 
         String particleName = data.getString("particle");
         if(particleName != null && !particleName.isBlank()) crate.setParticle(Particle.valueOf(particleName));
+        double particleDistance = data.getDouble("particle-distance", 0.8);
+        if(!Double.isFinite(particleDistance) || particleDistance < 0.0 || particleDistance > 5.0) {
+            particleDistance = 0.8;
+        }
+        crate.setParticleDistance(particleDistance);
+        crate.setConstantParticle(data.getBoolean("constant-particle", false));
         crate.setOpenMessage(data.getString("open-message"));
         crate.setBroadcastOpenMessage(data.getBoolean("broadcast-open-message", false));
         if(data.contains("expires-at")) crate.setExpiresAt(Instant.ofEpochMilli(data.getLong("expires-at")));
@@ -418,6 +439,8 @@ public class CrateManager {
         data.set("created-at", crate.createdAt().toEpochMilli());
         data.set("expires-at", crate.expiresAt() == null ? null : crate.expiresAt().toEpochMilli());
         data.set("particle", crate.particle() == null ? null : crate.particle().name());
+        data.set("particle-distance", crate.particleDistance());
+        data.set("constant-particle", crate.constantParticle());
         data.set("open-message", crate.openMessage());
         data.set("broadcast-open-message", crate.broadcastOpenMessage());
         data.set("key", crate.key());

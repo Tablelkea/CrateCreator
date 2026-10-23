@@ -48,6 +48,9 @@ public final class CrateInfo implements SubCommand {
         messages.send(player, "chat.crate.info-particle", Map.of(
                 "particle", crate.particle() == null ? messages.plain("gui.no-particle") : crate.particle().name()
         ));
+        messages.send(player, "chat.crate.info-particle-distance", Map.of(
+                "distance", String.format(Locale.US, "%.2f", crate.particleDistance())
+        ));
         messages.send(player, "chat.crate.info-key", Map.of(
                 "key", keyName(crate.key())
         ));

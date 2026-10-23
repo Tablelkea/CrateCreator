@@ -111,7 +111,7 @@ public final class CrateListener implements Listener {
         consumeOneKey(player, heldItem);
         playCrateParticle(crate);
         ItemStack reward = selectReward(rewards);
-        giveRandomReward(player, reward);
+        giveRandomReward(player, crate, reward);
         plugin.history().recordOpen(player, crate.id(), crate.name(), reward);
         sendCrateOpenMessage(player, crate);
     }
@@ -182,10 +182,26 @@ public final class CrateListener implements Listener {
         Particle particle = crate.particle();
         if(particle == null) return;
         Location effectLocation = crate.location().add(0.5, 1.0, 0.5);
-        effectLocation.getWorld().spawnParticle(particle, effectLocation, 40, 0.8, 0.7, 0.8, 0.02);
+        double distance = crate.particleDistance();
+        effectLocation.getWorld().spawnParticle(particle, effectLocation, 40,
+                distance, distance, distance, 0.02);
     }
 
-    private void giveRandomReward(Player player, ItemStack selectedReward) {
+    private void giveRandomReward(Player player, Crate crate, ItemStack selectedReward) {
+        String command = crate.commandReward(selectedReward);
+        if(command != null) {
+            command = command.replace("{player}", player.getName())
+                    .replace("{uuid}", player.getUniqueId().toString())
+                    .replace("{crate}", crate.id());
+            if(!plugin.getServer().dispatchCommand(plugin.getServer().getConsoleSender(), command)) {
+                plugin.getLogger().warning("Could not execute reward command for crate " + crate.id()
+                        + ": " + command);
+                messages().send(player, "chat.crate.command-reward-failed");
+                return;
+            }
+            messages().send(player, "chat.crate.command-reward-executed");
+            return;
+        }
         ItemStack reward = selectedReward.clone();
         reward = stripRewardMetadata(reward);
         Map<Integer, ItemStack> overflow = player.getInventory().addItem(reward);
@@ -389,6 +405,7 @@ public final class CrateListener implements Listener {
         switch(slot) {
             case CrateGUI.ID_SLOT -> requestEdit(player, crate, EditField.ID);
             case CrateGUI.PARTICLE_SLOT -> player.openInventory(new ParticleGUI(crate).getInventory());
+            case CrateGUI.PARTICLE_DISTANCE_SLOT -> requestParticleDistance(player, crate);
             case CrateGUI.NAME_SLOT -> requestEdit(player, crate, EditField.NAME);
             case CrateGUI.KEY_SLOT -> player.openInventory(new KeyEditor(crate).getInventory());
             case CrateGUI.MESSAGE_SLOT -> requestEdit(player, crate, EditField.MESSAGE);
@@ -405,9 +422,25 @@ public final class CrateListener implements Listener {
                     player.openInventory(new CrateDeleteConfirmGUI(crate).getInventory());
             case CrateGUI.EXPIRATION_SLOT ->
                     player.openInventory(new CrateExpirationGUI(crate).getInventory());
+            case CrateGUI.CONSTANT_PARTICLE_SLOT -> toggleConstantParticle(player, crate);
             default -> {
             }
         }
+    }
+
+    private void toggleConstantParticle(Player player, Crate crate) {
+        if(crate.constantParticle()) {
+            crate.setConstantParticle(false);
+            messages().send(player, "chat.crate.constant-particle-disabled");
+            return;
+        }
+        if(crate.particle() == null) {
+            messages().send(player, "chat.crate.constant-particle-select-first");
+            player.openInventory(new ParticleGUI(crate).getInventory());
+            return;
+        }
+        crate.setConstantParticle(true);
+        messages().send(player, "chat.crate.constant-particle-enabled");
     }
 
     @EventHandler
@@ -477,12 +510,39 @@ public final class CrateListener implements Listener {
             }
             if(value.isBlank()) {
                 messages().send(player, "chat.crate.value-empty");
-                requestEdit(player, edit.crate(), edit.field());
+                if(edit.field() == EditField.COMMAND_REWARD) requestCommandReward(player, edit.crate());
+                else if(edit.field() == EditField.PARTICLE_DISTANCE) requestParticleDistance(player, edit.crate());
+                else requestEdit(player, edit.crate(), edit.field());
                 return;
             }
 
             if(edit.field() == EditField.REWARD_WEIGHT) {
                 updateRewardWeight(player, edit, value);
+                return;
+            }
+            if(edit.field() == EditField.PARTICLE_DISTANCE) {
+                updateParticleDistance(player, edit, value);
+                return;
+            }
+            if(edit.field() == EditField.COMMAND_REWARD) {
+                if(!player.isOp()) {
+                    messages().send(player, "chat.crate.edit-denied");
+                    return;
+                }
+                try {
+                    if(!edit.crate().addCommandReward(value)) {
+                        messages().send(player, edit.crate().hasRewardSpace()
+                                ? "chat.crate.reward-chance-total-too-high" : "chat.crate.rewards-full");
+                        player.openInventory(edit.crate().rewardsGUI().getInventory());
+                        return;
+                    }
+                } catch(IllegalArgumentException exception) {
+                    messages().send(player, "chat.crate.value-empty");
+                    requestCommandReward(player, edit.crate());
+                    return;
+                }
+                messages().send(player, "chat.crate.command-reward-added");
+                player.openInventory(edit.crate().rewardsGUI().getInventory());
                 return;
             }
             if(edit.field() == EditField.NAME) {
@@ -558,6 +618,8 @@ public final class CrateListener implements Listener {
             case ID -> messages().plain("chat.crate.field-id");
             case MESSAGE -> messages().plain("chat.crate.field-message");
             case REWARD_WEIGHT -> messages().plain("chat.crate.field-reward-weight");
+            case PARTICLE_DISTANCE -> messages().plain("chat.crate.field-particle-distance");
+            case COMMAND_REWARD -> messages().plain("chat.crate.field-command-reward");
         };
         player.closeInventory();
         messages().send(player, "chat.crate.edit-prompt", Map.of("field", label));
@@ -573,6 +635,41 @@ public final class CrateListener implements Listener {
         messages().send(player, "chat.crate.reward-weight-prompt", Map.of(
                 "chance", formatNumber(chance)
         ));
+    }
+
+    private void requestCommandReward(Player player, Crate crate) {
+        pendingEdits.put(player.getUniqueId(), new PendingEdit(crate, EditField.COMMAND_REWARD, -1));
+        player.closeInventory();
+        messages().send(player, "chat.crate.command-reward-prompt");
+    }
+
+    private void requestParticleDistance(Player player, Crate crate) {
+        pendingEdits.put(player.getUniqueId(), new PendingEdit(crate, EditField.PARTICLE_DISTANCE, -1));
+        player.closeInventory();
+        messages().send(player, "chat.crate.particle-distance-prompt", Map.of(
+                "value", formatNumber(crate.particleDistance())
+        ));
+    }
+
+    private void updateParticleDistance(Player player, PendingEdit edit, String value) {
+        double distance;
+        try {
+            distance = Double.parseDouble(value.replace(',', '.'));
+        } catch(NumberFormatException exception) {
+            messages().send(player, "chat.crate.particle-distance-invalid");
+            requestParticleDistance(player, edit.crate());
+            return;
+        }
+        if(!Double.isFinite(distance) || distance < 0.0 || distance > 5.0) {
+            messages().send(player, "chat.crate.particle-distance-invalid");
+            requestParticleDistance(player, edit.crate());
+            return;
+        }
+        edit.crate().setParticleDistance(distance);
+        messages().send(player, "chat.crate.particle-distance-updated", Map.of(
+                "value", formatNumber(distance)
+        ));
+        player.openInventory(edit.crate().gui().getInventory());
     }
 
     private void updateRewardWeight(Player player, PendingEdit edit, String value) {
@@ -629,15 +726,12 @@ public final class CrateListener implements Listener {
             if(particle == null) return;
             gui.crate().setParticle(particle);
             messages().send(player, "chat.crate.particle-selected", Map.of("particle", particle.name()));
-            player.closeInventory();
-            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-                Location effectLocation = gui.crate().location().clone().add(0.5, 1.0, 0.5);
-                if(effectLocation.getWorld() != null) {
-                    effectLocation.getWorld().spawnParticle(particle, effectLocation,
-                            40, 0.8, 0.7, 0.8, 0.02);
-                }
-                if(player.isOnline()) player.openInventory(gui.getInventory());
-            }, 20L);
+            Location effectLocation = player.getLocation().clone().add(0.0, 1.0, 0.0);
+            if(effectLocation.getWorld() != null) {
+                double distance = gui.crate().particleDistance();
+                effectLocation.getWorld().spawnParticle(particle, effectLocation,
+                        40, distance, distance, distance, 0.02);
+            }
         }
     }
 
@@ -654,9 +748,10 @@ public final class CrateListener implements Listener {
         switch(slot) {
             case CrateRewardTypeGUI.ITEM_SLOT ->
                     openItemRewardGUI(player, crate);
+            case CrateRewardTypeGUI.COMMAND_SLOT ->
+                    requestCommandReward(player, crate);
             case CrateRewardTypeGUI.MONEY_SLOT,
                  CrateRewardTypeGUI.EXPERIENCE_SLOT,
-                 CrateRewardTypeGUI.COMMAND_SLOT,
                  CrateRewardTypeGUI.MUSEUM_SLOT ->
                     messages().send(player, "chat.crate.plugin-missing");
             case CrateRewardTypeGUI.BACK_SLOT ->
@@ -826,7 +921,9 @@ public final class CrateListener implements Listener {
         NAME,
         ID,
         MESSAGE,
-        REWARD_WEIGHT
+        REWARD_WEIGHT,
+        PARTICLE_DISTANCE,
+        COMMAND_REWARD
     }
 
     private record RewardChoice(ItemStack item, double weight) {
